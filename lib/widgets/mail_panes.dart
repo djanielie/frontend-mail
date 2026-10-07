@@ -374,6 +374,20 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
                 onPressed: () => _advancedSearch(context),
                 icon: const Icon(Icons.tune),
               ),
+              const SizedBox(width: 8),
+              IconButton.outlined(
+                tooltip: 'Delete matching search',
+                onPressed: mail.messages.isEmpty ? null : () => _trashMatchingSearch(context),
+                icon: const Icon(Icons.delete_sweep_outlined),
+              ),
+              if (mail.folder?.icon == 'delete') ...[
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  tooltip: 'Empty Trash',
+                  onPressed: mail.messages.isEmpty ? null : () => _emptyTrash(context),
+                  icon: const Icon(Icons.delete_forever_outlined),
+                ),
+              ],
             ],
           ),
         ),
@@ -388,6 +402,11 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
                   children: [
                     Text('${mail.selectedUids.length} selected', style: const TextStyle(fontWeight: FontWeight.w700)),
                     const Spacer(),
+                    TextButton.icon(
+                      onPressed: () => ref.read(mailControllerProvider.notifier).selectAllLoaded(),
+                      icon: const Icon(Icons.select_all),
+                      label: const Text('All'),
+                    ),
                     IconButton(tooltip: 'Mark read', onPressed: () => ref.read(mailControllerProvider.notifier).batch('read'), icon: const Icon(Icons.mark_email_read_outlined)),
                     IconButton(tooltip: 'Mark unread', onPressed: () => ref.read(mailControllerProvider.notifier).batch('unread'), icon: const Icon(Icons.mark_email_unread_outlined)),
                     IconButton(tooltip: 'Flag', onPressed: () => ref.read(mailControllerProvider.notifier).batch('flag'), icon: const Icon(Icons.flag_outlined)),
@@ -498,6 +517,89 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
     );
     if (destination == null) return;
     await ref.read(mailControllerProvider.notifier).batch('move', destination: destination);
+  }
+
+  Future<void> _trashMatchingSearch(BuildContext context) async {
+    final mail = ref.read(mailControllerProvider);
+    final hasCriteria = mail.query.trim().isNotEmpty ||
+        mail.from.trim().isNotEmpty ||
+        mail.to.trim().isNotEmpty ||
+        mail.subject.trim().isNotEmpty ||
+        mail.since != null ||
+        mail.before != null ||
+        mail.filter != 'all';
+    if (!hasCriteria) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a keyword, date, sender, recipient, subject, or filter before bulk deleting.')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete matching messages?'),
+        content: Text(
+          'This will move every message matching the current search/filter in "${mail.folder?.name ?? mail.folderPath}" to Trash.\n\n'
+          'Current match count: ${mail.total}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton.tonalIcon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: const Text('Move to Trash'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(this.context);
+
+    try {
+      final count = await ref.read(mailControllerProvider.notifier).trashMatchingCurrentView();
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('$count matching messages moved to Trash.')));
+    } catch (_) {
+      if (!mounted) return;
+      final error = ref.read(mailControllerProvider).error ?? 'Matching messages could not be deleted.';
+      messenger.showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  Future<void> _emptyTrash(BuildContext context) async {
+    final mail = ref.read(mailControllerProvider);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Empty Trash?'),
+        content: Text(
+          'This will permanently delete ${mail.total == 1 ? '1 message' : '${mail.total} messages'} from Trash. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Empty Trash'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(this.context);
+
+    try {
+      final count = await ref.read(mailControllerProvider.notifier).emptyTrash();
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('$count messages permanently deleted.')));
+    } catch (_) {
+      if (!mounted) return;
+      final error = ref.read(mailControllerProvider).error ?? 'Trash could not be emptied.';
+      messenger.showSnackBar(SnackBar(content: Text(error)));
+    }
   }
 
   Future<void> _advancedSearch(BuildContext context) async {

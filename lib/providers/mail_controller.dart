@@ -330,6 +330,10 @@ class MailController extends StateNotifier<MailState> {
     state = state.copyWith(clearSelectedUids: true);
   }
 
+  void selectAllLoaded() {
+    state = state.copyWith(selectedUids: state.messages.map((message) => message.uid).toSet());
+  }
+
   Future<void> batch(String action, {String? destination}) async {
     if (state.selectedUids.isEmpty || state.folderPath.isEmpty) return;
     try {
@@ -345,6 +349,65 @@ class MailController extends StateNotifier<MailState> {
       state = state.copyWith(error: err.message);
     } catch (_) {
       state = state.copyWith(error: 'The selected messages could not be updated.');
+    }
+  }
+
+  bool get hasBulkCriteria {
+    return state.query.trim().isNotEmpty ||
+        state.from.trim().isNotEmpty ||
+        state.to.trim().isNotEmpty ||
+        state.subject.trim().isNotEmpty ||
+        state.since != null ||
+        state.before != null ||
+        state.filter != 'all';
+  }
+
+  Future<int> trashMatchingCurrentView() async {
+    if (state.folderPath.isEmpty) return 0;
+    if (!hasBulkCriteria) {
+      state = state.copyWith(error: 'Add a keyword, date, sender, recipient, subject, or filter before bulk deleting messages.');
+      return 0;
+    }
+    try {
+      final json = await _api.postJson('/api/mail/messages/trash-query', {
+        'folder': state.folderPath,
+        'q': state.query,
+        'filter': state.filter,
+        'from': state.from,
+        'to': state.to,
+        'subject': state.subject,
+        'since': _dateParam(state.since),
+        'before': _dateParam(state.before),
+      });
+      final count = json['count'] is num ? (json['count'] as num).toInt() : 0;
+      state = state.copyWith(clearSelectedUids: true);
+      await refresh();
+      await refreshFolders();
+      return count;
+    } on ApiException catch (err) {
+      state = state.copyWith(error: err.message);
+      rethrow;
+    } catch (_) {
+      state = state.copyWith(error: 'Matching messages could not be deleted.');
+      rethrow;
+    }
+  }
+
+  Future<int> emptyTrash() async {
+    if (state.folderPath.isEmpty) return 0;
+    try {
+      final json = await _api.postJson('/api/mail/trash/empty', {'folder': state.folderPath});
+      final count = json['count'] is num ? (json['count'] as num).toInt() : 0;
+      state = state.copyWith(clearSelectedUids: true);
+      await refresh();
+      await refreshFolders();
+      return count;
+    } on ApiException catch (err) {
+      state = state.copyWith(error: err.message);
+      rethrow;
+    } catch (_) {
+      state = state.copyWith(error: 'Trash could not be emptied.');
+      rethrow;
     }
   }
 

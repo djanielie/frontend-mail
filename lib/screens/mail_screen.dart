@@ -27,6 +27,7 @@ class _MailScreenState extends ConsumerState<MailScreen> {
   var _pane = 1;
   var _mobileNavExpanded = false;
   var _desktopFoldersExpanded = true;
+  var _desktopMessageListWidth = 400.0;
 
   @override
   void dispose() {
@@ -127,22 +128,42 @@ class _MailScreenState extends ConsumerState<MailScreen> {
             : null,
       ),
       body: large
-          ? Row(
-              children: [
-                _DesktopFolderNav(
-                  expanded: _desktopFoldersExpanded,
-                  onToggle: () => setState(() => _desktopFoldersExpanded = !_desktopFoldersExpanded),
-                ),
-                const VerticalDivider(width: 1),
-                SizedBox(
-                  width: 400,
-                  child: MessageListPane(onOpen: (message) {
-                    ref.read(mailControllerProvider.notifier).openMessage(message);
-                  }),
-                ),
-                const VerticalDivider(width: 1),
-                const Expanded(child: MessageReader()),
-              ],
+          ? LayoutBuilder(
+              builder: (context, constraints) {
+                const minListWidth = 320.0;
+                const maxListWidth = 720.0;
+                const minReaderWidth = 380.0;
+                const dividerWidth = 1.0;
+                const dragHandleWidth = 12.0;
+                final folderWidth = _desktopFoldersExpanded ? 260.0 : 74.0;
+                final availableForList = constraints.maxWidth - folderWidth - (dividerWidth * 2) - dragHandleWidth - minReaderWidth;
+                final effectiveMax = availableForList.clamp(minListWidth, maxListWidth);
+                final listWidth = _desktopMessageListWidth.clamp(minListWidth, effectiveMax);
+
+                return Row(
+                  children: [
+                    _DesktopFolderNav(
+                      expanded: _desktopFoldersExpanded,
+                      onToggle: () => setState(() => _desktopFoldersExpanded = !_desktopFoldersExpanded),
+                    ),
+                    const VerticalDivider(width: 1),
+                    SizedBox(
+                      width: listWidth,
+                      child: MessageListPane(onOpen: (message) {
+                        ref.read(mailControllerProvider.notifier).openMessage(message);
+                      }),
+                    ),
+                    _ResizeHandle(
+                      onDrag: (delta) {
+                        setState(() {
+                          _desktopMessageListWidth = (_desktopMessageListWidth + delta).clamp(minListWidth, effectiveMax);
+                        });
+                      },
+                    ),
+                    const Expanded(child: MessageReader()),
+                  ],
+                );
+              },
             )
           : medium
               ? Row(
@@ -222,6 +243,37 @@ class _MailScreenState extends ConsumerState<MailScreen> {
   }
 }
 
+class _ResizeHandle extends StatelessWidget {
+  const _ResizeHandle({required this.onDrag});
+
+  final ValueChanged<double> onDrag;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (details) => onDrag(details.delta.dx),
+        child: SizedBox(
+          width: 12,
+          child: Center(
+            child: Container(
+              width: 3,
+              height: 44,
+              decoration: BoxDecoration(
+                color: scheme.outlineVariant,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DesktopFolderNav extends ConsumerWidget {
   const _DesktopFolderNav({required this.expanded, required this.onToggle});
 
@@ -254,11 +306,11 @@ class _DesktopFolderNav extends ConsumerWidget {
             child: expanded
                 ? const FolderPane()
                 : ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                     children: [
                       for (final folder in mail.folders)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.only(bottom: 14),
                           child: Tooltip(
                             message: folder.name,
                             child: IconButton.filledTonal(
@@ -453,7 +505,7 @@ class _MobileMailNav extends ConsumerWidget {
             const Divider(height: 20),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: expanded ? 0 : 8),
                 children: [
                   for (final folder in mail.folders)
                     _FolderRailItem(
@@ -496,7 +548,7 @@ class _FolderRailItem extends StatelessWidget {
     final color = selected ? scheme.primary : scheme.onSurfaceVariant;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: EdgeInsets.only(bottom: expanded ? 6 : 14),
       child: Tooltip(
         message: expanded ? '' : folder.name,
         child: Material(
@@ -506,7 +558,7 @@ class _FolderRailItem extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(18),
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: expanded ? 14 : 0, vertical: 12),
+              padding: EdgeInsets.symmetric(horizontal: expanded ? 14 : 0, vertical: expanded ? 12 : 16),
               child: Row(
                 mainAxisAlignment: expanded ? MainAxisAlignment.start : MainAxisAlignment.center,
                 children: [

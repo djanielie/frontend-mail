@@ -77,6 +77,11 @@ class MessageReader extends ConsumerWidget {
                 icon: const Icon(Icons.copy_outlined),
               ),
               IconButton(
+                tooltip: 'Details / source',
+                onPressed: () => _showDetails(context, ref, message),
+                icon: const Icon(Icons.article_outlined),
+              ),
+              IconButton(
                 tooltip: message.isFlagged ? 'Remove flag' : 'Flag',
                 onPressed: () => ref.read(mailControllerProvider.notifier).toggleFlag(summary),
                 icon: Icon(message.isFlagged ? Icons.flag : Icons.flag_outlined),
@@ -218,6 +223,109 @@ class MessageReader extends ConsumerWidget {
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text(err.toString())));
     }
+  }
+
+  Future<void> _showDetails(BuildContext context, WidgetRef ref, MailMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final json = await ref.read(apiClientProvider).getJson(
+            '/api/mail/message/${message.uid}/source?folder=${Uri.encodeQueryComponent(message.folder)}',
+          );
+      if (!context.mounted) return;
+
+      final headers = (json['headers'] is List ? json['headers'] as List : const [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      final headersRaw = json['headersRaw']?.toString() ?? '';
+      final source = json['source']?.toString() ?? '';
+      final truncated = json['truncated'] == true;
+      final flags = (json['flags'] is List ? json['flags'] as List : const []).map((item) => item.toString()).join(', ');
+      final size = json['size'] is num ? (json['size'] as num).toInt() : 0;
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) => DefaultTabController(
+          length: 2,
+          child: AlertDialog(
+            title: const Text('Message details'),
+            content: SizedBox(
+              width: 760,
+              height: 560,
+              child: Column(
+                children: [
+                  const TabBar(tabs: [
+                    Tab(text: 'Details'),
+                    Tab(text: 'Raw source'),
+                  ]),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        ListView(
+                          children: [
+                            _detailLine('Subject', json['subject']?.toString() ?? message.subject),
+                            _detailLine('Date', json['date']?.toString() ?? message.date),
+                            _detailLine('Folder', json['folder']?.toString() ?? message.folder),
+                            _detailLine('UID', '${json['uid'] ?? message.uid}'),
+                            _detailLine('Size', formatBytes(size)),
+                            if (flags.isNotEmpty) _detailLine('Flags', flags),
+                            const Divider(height: 28),
+                            for (final header in headers)
+                              _detailLine(header['name']?.toString() ?? '', header['value']?.toString() ?? ''),
+                          ],
+                        ),
+                        ListView(
+                          children: [
+                            if (truncated)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Text(
+                                  'Source preview truncated by MAX_RAW_SOURCE_MB.',
+                                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                                ),
+                              ),
+                            SelectableText(source.isEmpty ? headersRaw : source),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Clipboard.setData(ClipboardData(text: headersRaw)),
+                child: const Text('Copy headers'),
+              ),
+              TextButton(
+                onPressed: () => Clipboard.setData(ClipboardData(text: source.isEmpty ? headersRaw : source)),
+                child: const Text('Copy source'),
+              ),
+              FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+            ],
+          ),
+        ),
+      );
+    } catch (err) {
+      messenger.showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Widget _detailLine(String label, String value) {
+    if (label.isEmpty || value.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: SelectableText.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w700)),
+            TextSpan(text: value),
+          ],
+        ),
+      ),
+    );
   }
 
   String _threadSubject(String subject) {
