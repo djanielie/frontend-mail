@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="iBeLucky">
+  <g stroke="#4b66d8" stroke-width="7.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 22.5 32 8.5 44 22.5" transform="rotate(0 32 32)"/>
+    <path d="M20 22.5 32 8.5 44 22.5" transform="rotate(72 32 32)"/>
+    <path d="M20 22.5 32 8.5 44 22.5" transform="rotate(144 32 32)"/>
+    <path d="M20 22.5 32 8.5 44 22.5" transform="rotate(216 32 32)"/>
+    <path d="M20 22.5 32 8.5 44 22.5" transform="rotate(288 32 32)"/>
+  </g>
+</svg>
