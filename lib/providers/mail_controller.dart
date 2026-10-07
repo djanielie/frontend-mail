@@ -263,6 +263,7 @@ class MailController extends StateNotifier<MailState> {
       return;
     }
     state = state.copyWith(listLoading: true, clearError: true);
+    await refreshFolders();
     await _loadPage(path, 1, replace: true);
   }
 
@@ -300,6 +301,17 @@ class MailController extends StateNotifier<MailState> {
         );
       }
     } on ApiException catch (err) {
+      if (err.status == 404 || err.code == 'MESSAGE_NOT_FOUND') {
+        state = state.copyWith(
+          messages: state.messages.where((item) => item.uid != summary.uid).toList(),
+          total: state.total > 0 ? state.total - 1 : 0,
+          detailLoading: false,
+          clearDetail: true,
+          clearSelection: true,
+          error: 'This message was already deleted.',
+        );
+        return;
+      }
       state = state.copyWith(detailLoading: false, error: err.message);
     } catch (_) {
       state = state.copyWith(detailLoading: false, error: 'The message could not be opened.');
@@ -463,10 +475,17 @@ class MailController extends StateNotifier<MailState> {
           .whereType<Map>()
           .map((item) => MailSummary.fromJson(Map<String, dynamic>.from(item)))
           .toList();
+      final unreadCount = json['unreadCount'] is num ? (json['unreadCount'] as num).toInt() : null;
       state = state.copyWith(
         messages: replace ? rows : [...state.messages, ...rows],
         page: page,
         total: json['total'] is num ? (json['total'] as num).toInt() : rows.length,
+        folders: unreadCount == null
+            ? null
+            : [
+                for (final item in state.folders)
+                  if (item.path == folder) item.copyWith(unreadCount: unreadCount) else item,
+              ],
         listLoading: false,
         loadingMore: false,
       );
