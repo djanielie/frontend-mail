@@ -10,6 +10,17 @@ String documentFromPlain(String source) {
   return _document(paragraphs.isEmpty ? '<p></p>' : paragraphs);
 }
 
+String documentWithSignature(String source, String signature) {
+  final body = documentFromPlain(source).replaceFirst(RegExp(r'^<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'), '').replaceFirst('</body></html>', '');
+  final sig = signature.trim();
+  if (sig.isEmpty) return _document(body);
+  if (_looksLikeHtml(sig)) return _document('$body$sig');
+  final signatureBody = documentFromPlain(sig)
+      .replaceFirst(RegExp(r'^<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'), '')
+      .replaceFirst('</body></html>', '');
+  return _document('$body$signatureBody');
+}
+
 String documentFromFragment(String fragment) {
   final trimmed = fragment.trim();
   if (trimmed.isEmpty) return documentFromPlain('');
@@ -43,4 +54,17 @@ String plainFromSource(String source) {
   return source
       .replaceAllMapped(RegExp(r'\*\*(.+?)\*\*'), (match) => match[1] ?? '')
       .replaceAllMapped(RegExp(r'\*(.+?)\*'), (match) => match[1] ?? '');
+}
+
+String plainWithSignature(String source, String signature) {
+  final sig = signature.trim();
+  if (sig.isEmpty) return plainFromSource(source);
+  final plainSig = _looksLikeHtml(sig)
+      ? sig.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n').replaceAll(RegExp(r'<[^>]+>'), ' ')
+      : plainFromSource(sig);
+  return '${plainFromSource(source)}\n\n${plainSig.replaceAll(RegExp(r'\s+'), ' ').trim()}'.trim();
+}
+
+bool _looksLikeHtml(String value) {
+  return RegExp(r'</?[a-z][\s\S]*>', caseSensitive: false).hasMatch(value);
 }

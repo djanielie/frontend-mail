@@ -118,11 +118,15 @@ class MailPreferencesController extends StateNotifier<MailPreferences> {
   static MailPreferences _read(SharedPreferences prefs, String email) {
     if (email.isEmpty) return const MailPreferences();
     final raw = prefs.getString(_key(email));
-    if (raw == null || raw.isEmpty) return const MailPreferences();
+    if (raw == null || raw.isEmpty) return MailPreferences(signature: _defaultSignature(email));
     try {
-      return MailPreferences.fromJson(jsonDecode(raw));
+      final parsed = MailPreferences.fromJson(jsonDecode(raw));
+      if (parsed.signature.trim().isEmpty) {
+        return parsed.copyWith(signature: _defaultSignature(email));
+      }
+      return parsed;
     } catch (_) {
-      return const MailPreferences();
+      return MailPreferences(signature: _defaultSignature(email));
     }
   }
 
@@ -145,6 +149,33 @@ class MailPreferencesController extends StateNotifier<MailPreferences> {
       ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
     await _write(state.copyWith(contacts: next));
   }
+}
+
+String _defaultSignature(String email) {
+  if (email.toLowerCase() != 'eliedjani@ibelucky.com') return '';
+  return '''
+<table role="presentation" cellpadding="0" cellspacing="0" style="font-family:Arial,Helvetica,sans-serif;color:#111827;border-collapse:collapse;margin-top:24px">
+  <tr>
+    <td style="vertical-align:top;padding-right:16px;border-right:3px solid #4B66D8">
+      <img src="https://ibelucky.com/assets/images/logo.svg?v=1787574648" alt="iBeLucky" width="72" style="display:block;width:72px;height:auto">
+    </td>
+    <td style="vertical-align:top;padding-left:16px">
+      <div style="font-size:16px;font-weight:700;color:#060910">ILUNGA DJANI Elie</div>
+      <div style="font-size:13px;color:#4B66D8;font-weight:700;margin-top:2px">Director · iBeLucky</div>
+      <div style="font-size:13px;line-height:1.45;margin-top:10px">
+        <a href="mailto:eliedjani@ibelucky.com" style="color:#4B66D8;text-decoration:none">eliedjani@ibelucky.com</a><br>
+        <a href="tel:+243995517430" style="color:#111827;text-decoration:none">+243995517430</a>
+      </div>
+      <div style="font-size:12px;line-height:1.45;color:#4b5563;margin-top:10px">
+        Unit A, 82 James Carter Road<br>
+        Mildenhall, Bury St. Edmunds<br>
+        Suffolk, IP28 7DE<br>
+        United Kingdom
+      </div>
+    </td>
+  </tr>
+</table>
+''';
 }
 
 final mailPreferencesProvider = StateNotifierProvider<MailPreferencesController, MailPreferences>((ref) {

@@ -50,28 +50,35 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
           TextButton(onPressed: _save, child: const Text('Save')),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          TextField(controller: _displayName, decoration: const InputDecoration(labelText: 'Display name')),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _signature,
-            minLines: 4,
-            maxLines: null,
-            decoration: const InputDecoration(labelText: 'Signature'),
-          ),
-          const SizedBox(height: 20),
-          SegmentedButton<String>(
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              TextField(controller: _displayName, decoration: const InputDecoration(labelText: 'Display name')),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _signature,
+                minLines: 6,
+                maxLines: null,
+                decoration: const InputDecoration(
+                  labelText: 'Signature',
+                  helperText: 'HTML is supported for rich signatures, images and columns.',
+                ),
+              ),
+              const SizedBox(height: 20),
+              SegmentedButton<String>(
             segments: const [
               ButtonSegment(value: 'comfortable', label: Text('Comfortable')),
               ButtonSegment(value: 'compact', label: Text('Compact')),
             ],
             selected: {_density},
             onSelectionChanged: (value) => setState(() => _density = value.first),
-          ),
-          const SizedBox(height: 20),
-          DropdownButtonFormField<int>(
+              ),
+              const SizedBox(height: 20),
+              DropdownButtonFormField<int>(
             initialValue: _color,
             decoration: const InputDecoration(labelText: 'Account color'),
             items: const [
@@ -81,27 +88,27 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
               DropdownMenuItem(value: 0xFF8B5CF6, child: Text('Purple')),
             ],
             onChanged: (value) => setState(() => _color = value ?? _color),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
             initialValue: _sentFolder.isEmpty ? null : _sentFolder,
             decoration: const InputDecoration(labelText: 'Preferred Sent folder'),
             items: [
               for (final folder in folders) DropdownMenuItem(value: folder.path, child: Text(folder.name)),
             ],
             onChanged: (value) => setState(() => _sentFolder = value ?? ''),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
             initialValue: _draftsFolder.isEmpty ? null : _draftsFolder,
             decoration: const InputDecoration(labelText: 'Preferred Drafts folder'),
             items: [
               for (final folder in folders) DropdownMenuItem(value: folder.path, child: Text(folder.name)),
             ],
             onChanged: (value) => setState(() => _draftsFolder = value ?? ''),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<int>(
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
             initialValue: _pollMinutes,
             decoration: const InputDecoration(labelText: 'Refresh interval'),
             items: const [
@@ -111,8 +118,10 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
               DropdownMenuItem(value: 10, child: Text('Every 10 minutes')),
             ],
             onChanged: (value) => setState(() => _pollMinutes = value ?? _pollMinutes),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -48,26 +48,38 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
           IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (_loading) const LinearProgressIndicator(),
-          if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          _StatusTile(label: 'API', value: rows['status']?.toString() ?? '-'),
-          _StatusTile(label: 'IMAP', value: rows['imap']?.toString() ?? '-'),
-          _StatusTile(label: 'SMTP', value: rows['smtp']?.toString() ?? '-'),
-          _StatusTile(label: 'Database', value: rows['database']?.toString() ?? '-'),
-          _StatusTile(label: 'Folders', value: rows['folderCount']?.toString() ?? '-'),
-          const SizedBox(height: 16),
-          Text('Folders', style: Theme.of(context).textTheme.titleMedium),
-          for (final folder in (rows['folders'] is List ? rows['folders'] as List : const []))
-            if (folder is Map)
-              ListTile(
-                title: Text(folder['name']?.toString() ?? ''),
-                subtitle: Text(folder['path']?.toString() ?? ''),
-                trailing: Text('${folder['unreadCount'] ?? 0}'),
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              if (_loading) const LinearProgressIndicator(),
+              if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Card(
+                child: Column(
+                  children: [
+                    _StatusTile(label: 'API', value: rows['status']?.toString() ?? '-'),
+                    _StatusTile(label: 'IMAP', value: rows['imap']?.toString() ?? '-'),
+                    _StatusTile(label: 'SMTP', value: rows['smtp']?.toString() ?? '-'),
+                    _StatusTile(label: 'Database', value: rows['database']?.toString() ?? '-'),
+                    _StatusTile(label: 'Folders', value: rows['folderCount']?.toString() ?? '-'),
+                  ],
+                ),
               ),
-        ],
+              const SizedBox(height: 16),
+              Text('Folders', style: Theme.of(context).textTheme.titleMedium),
+              for (final folder in (rows['folders'] is List ? rows['folders'] as List : const []))
+                if (folder is Map)
+                  ListTile(
+                    title: Text(folder['name']?.toString() ?? ''),
+                    subtitle: Text(folder['path']?.toString() ?? ''),
+                    trailing: Text('${folder['unreadCount'] ?? 0}'),
+                  ),
+            ],
+          ),
+        ),
       ),
     );
   }

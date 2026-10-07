@@ -8,6 +8,7 @@ import '../models/mail_models.dart';
 import '../screens/compose_screen.dart';
 import '../screens/diagnostics_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/mailbox_admin_screen.dart';
 import '../screens/mail_settings_screen.dart';
 import '../widgets/ibelucky_mark.dart';
 import '../widgets/mail_panes.dart';
@@ -25,6 +26,7 @@ class _MailScreenState extends ConsumerState<MailScreen> {
   final _keyboardFocus = FocusNode();
   var _pane = 1;
   var _mobileNavExpanded = false;
+  var _desktopFoldersExpanded = true;
 
   @override
   void dispose() {
@@ -127,7 +129,10 @@ class _MailScreenState extends ConsumerState<MailScreen> {
       body: large
           ? Row(
               children: [
-                const SizedBox(width: 260, child: FolderPane()),
+                _DesktopFolderNav(
+                  expanded: _desktopFoldersExpanded,
+                  onToggle: () => setState(() => _desktopFoldersExpanded = !_desktopFoldersExpanded),
+                ),
                 const VerticalDivider(width: 1),
                 SizedBox(
                   width: 400,
@@ -217,6 +222,67 @@ class _MailScreenState extends ConsumerState<MailScreen> {
   }
 }
 
+class _DesktopFolderNav extends ConsumerWidget {
+  const _DesktopFolderNav({required this.expanded, required this.onToggle});
+
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mail = ref.watch(mailControllerProvider);
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      width: expanded ? 260 : 74,
+      color: scheme.surfaceContainerLow,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: Align(
+              alignment: expanded ? Alignment.centerRight : Alignment.center,
+              child: IconButton(
+                tooltip: expanded ? 'Shrink folders' : 'Expand folders',
+                onPressed: onToggle,
+                icon: Icon(expanded ? Icons.keyboard_double_arrow_left : Icons.keyboard_double_arrow_right),
+              ),
+            ),
+          ),
+          Expanded(
+            child: expanded
+                ? const FolderPane()
+                : ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                    children: [
+                      for (final folder in mail.folders)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Tooltip(
+                            message: folder.name,
+                            child: IconButton.filledTonal(
+                              isSelected: folder.path == mail.folderPath,
+                              onPressed: folder.selectable
+                                  ? () => ref.read(mailControllerProvider.notifier).selectFolder(folder, force: true)
+                                  : null,
+                              icon: Badge(
+                                isLabelVisible: folder.unreadCount > 0,
+                                label: Text('${folder.unreadCount}'),
+                                child: Icon(folderIcon(folder.icon)),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AccountMenu extends ConsumerWidget {
   const _AccountMenu({required this.auth, required this.onSignOut, this.expanded = false});
 
@@ -245,6 +311,10 @@ class _AccountMenu extends ConsumerWidget {
           await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DiagnosticsScreen()));
           return;
         }
+        if (value == 'mailbox-admin') {
+          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MailboxAdminScreen()));
+          return;
+        }
         if (value.startsWith('account:')) {
           ref.read(authControllerProvider.notifier).switchAccount(value.substring('account:'.length));
         }
@@ -259,6 +329,8 @@ class _AccountMenu extends ConsumerWidget {
             ),
           ),
         const PopupMenuDivider(),
+        if ((auth.email ?? '').toLowerCase() == 'eliedjani@ibelucky.com')
+          const PopupMenuItem(value: 'mailbox-admin', child: Text('Mailbox admin')),
         const PopupMenuItem(value: 'settings', child: Text('Mail settings')),
         const PopupMenuItem(value: 'diagnostics', child: Text('Diagnostics')),
         const PopupMenuItem(value: 'add', child: Text('Add account')),

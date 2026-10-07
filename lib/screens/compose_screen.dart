@@ -144,6 +144,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
 
   String _withSignature(String body, String signature) {
     if (signature.isEmpty || body.contains(signature)) return body;
+    if (RegExp(r'</?[a-z][\s\S]*>', caseSensitive: false).hasMatch(signature)) return body;
     if (body.trim().isEmpty) return '\n\n$signature';
     return '$body\n\n$signature';
   }
@@ -153,8 +154,8 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
         'cc': _cc.text.trim(),
         'bcc': _bcc.text.trim(),
         'subject': _subject.text.trim(),
-        'text': plainFromSource(_body.text),
-        'html': documentFromPlain(_body.text),
+        'text': plainWithSignature(_body.text, ref.read(mailPreferencesProvider).signature),
+        'html': documentWithSignature(_body.text, ref.read(mailPreferencesProvider).signature),
         'inReplyTo': widget.args.inReplyTo,
         'references': widget.args.references,
       };
@@ -314,7 +315,10 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: SelectionArea(
-                            child: HtmlWidget(documentFromPlain(_body.text), textStyle: Theme.of(context).textTheme.bodyLarge),
+                            child: HtmlWidget(
+                              documentWithSignature(_body.text, ref.read(mailPreferencesProvider).signature),
+                              textStyle: Theme.of(context).textTheme.bodyLarge,
+                            ),
                           ),
                         ),
                       )
