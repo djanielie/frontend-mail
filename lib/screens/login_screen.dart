@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_controller.dart';
+import '../widgets/glass.dart';
 import '../widgets/ibelucky_mark.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -36,17 +37,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final wide = MediaQuery.sizeOf(context).width >= 720;
     final adding = Navigator.of(context).canPop();
 
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF060910),
-              Color(0xFF152047),
-              Color(0xFF060910),
-            ],
+            colors: dark
+                ? const [Color(0xFF060910), Color(0xFF152047), Color(0xFF060910)]
+                : const [Color(0xFFF4F6FF), Color(0xFFE4EBFF), Color(0xFFF7F8FC)],
           ),
         ),
         child: SafeArea(
@@ -55,9 +55,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               padding: const EdgeInsets.all(24),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 440),
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: wide ? 36 : 24, vertical: 32),
+                child: GlassPanel(
+                  padding: EdgeInsets.symmetric(horizontal: wide ? 36 : 24, vertical: 32),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -113,7 +112,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                       ],
                     ),
-                  ),
                 ),
               ),
             ),

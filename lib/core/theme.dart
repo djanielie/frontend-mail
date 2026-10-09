@@ -38,17 +38,30 @@ ThemeData buildMailTheme(Brightness brightness) {
     textTheme: text,
     scaffoldBackgroundColor: scheme.surface,
     appBarTheme: AppBarTheme(
-      backgroundColor: scheme.surface,
+      backgroundColor: scheme.surface.withValues(alpha: dark ? 0.72 : 0.78),
       foregroundColor: scheme.onSurface,
+      surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
       titleTextStyle: text.titleLarge,
     ),
+    drawerTheme: DrawerThemeData(
+      backgroundColor: scheme.surface.withValues(alpha: dark ? 0.78 : 0.86),
+      surfaceTintColor: Colors.transparent,
+    ),
     cardTheme: CardThemeData(
       elevation: 0,
-      color: dark ? const Color(0xFF12182A) : scheme.surfaceContainerLow,
+      color: dark ? const Color(0xCC12182A) : Colors.white.withValues(alpha: 0.72),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: scheme.primary,
+      foregroundColor: scheme.onPrimary,
+      elevation: 3,
+      focusElevation: 4,
+      hoverElevation: 5,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(

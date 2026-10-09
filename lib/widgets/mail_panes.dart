@@ -5,8 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../models/mail_models.dart';
+import '../providers/auth_controller.dart';
 import '../providers/mail_controller.dart';
 import '../providers/mail_preferences.dart';
+import '../screens/contacts_screen.dart';
+import '../screens/diagnostics_screen.dart';
+import '../screens/login_screen.dart';
+import '../screens/mailbox_admin_screen.dart';
+import '../screens/mail_settings_screen.dart';
+import 'account_switcher.dart';
+import 'glass.dart';
 
 IconData folderIcon(String icon) {
   switch (icon) {
@@ -52,65 +60,104 @@ class FolderPane extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mail = ref.watch(mailControllerProvider);
+    final auth = ref.watch(authControllerProvider);
     final scheme = Theme.of(context).colorScheme;
+    final admin = (auth.email ?? '').toLowerCase() == 'eliedjani@ibelucky.com';
 
     return Material(
-      color: scheme.surfaceContainerLow,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      color: Colors.transparent,
+      child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 4, 8),
-            child: Row(
+          const AccountSwitcher(),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               children: [
-                Expanded(child: Text('Folders', style: Theme.of(context).textTheme.titleMedium)),
-                IconButton(
-                  tooltip: 'New folder',
-                  onPressed: () => _createFolder(context, ref),
-                  icon: const Icon(Icons.create_new_folder_outlined),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 4, 8),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text('Folders', style: Theme.of(context).textTheme.titleMedium)),
+                      IconButton(
+                        tooltip: 'New folder',
+                        onPressed: () => _createFolder(context, ref),
+                        icon: const Icon(Icons.create_new_folder_outlined),
+                      ),
+                    ],
+                  ),
                 ),
+                for (final folder in mail.folders)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: ListTile(
+                      selected: folder.path == mail.folderPath,
+                      enabled: folder.selectable,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      leading: Icon(folderIcon(folder.icon)),
+                      title: Text(folder.name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (folder.unreadCount > 0)
+                            Text(
+                              '${folder.unreadCount}',
+                              style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
+                            ),
+                          PopupMenuButton<String>(
+                            tooltip: 'Folder actions',
+                            onSelected: (value) => _folderAction(context, ref, folder, value),
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                              if (!['inbox', 'send', 'drafts', 'delete'].contains(folder.icon))
+                                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                            ],
+                          ),
+                        ],
+                      ),
+                      onTap: folder.selectable
+                          ? () async {
+                              await ref.read(mailControllerProvider.notifier).selectFolder(folder, force: true);
+                              onSelected?.call();
+                            }
+                          : null,
+                    ),
+                  ),
               ],
             ),
           ),
-          for (final folder in mail.folders)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: ListTile(
-                selected: folder.path == mail.folderPath,
-                enabled: folder.selectable,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                leading: Icon(folderIcon(folder.icon)),
-                title: Text(folder.name),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (folder.unreadCount > 0)
-                      Text(
-                        '${folder.unreadCount}',
-                        style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
-                      ),
-                    PopupMenuButton<String>(
-                      tooltip: 'Folder actions',
-                      onSelected: (value) => _folderAction(context, ref, folder, value),
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                        if (!['inbox', 'send', 'drafts', 'delete'].contains(folder.icon))
-                          const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                      ],
-                    ),
-                  ],
-                ),
-                onTap: folder.selectable
-                    ? () async {
-                        await ref.read(mailControllerProvider.notifier).selectFolder(folder, force: true);
-                        onSelected?.call();
-                      }
-                    : null,
-              ),
-            ),
+          _AccountActionsPanel(
+            admin: admin,
+            onOpen: (page) => _open(context, page),
+            onSignOut: () => _signOut(context, ref),
+          ),
         ],
       ),
     );
+  }
+
+  void _open(BuildContext context, Widget page) {
+    final navigator = Navigator.of(context);
+    onSelected?.call();
+    navigator.push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    final email = ref.read(authControllerProvider).email ?? 'ce compte';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Se déconnecter'),
+        content: Text('Déconnecter $email ? Les autres boîtes restent connectées.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Se déconnecter')),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      onSelected?.call();
+      await ref.read(authControllerProvider.notifier).signOutActive();
+    }
   }
 
   Future<void> _createFolder(BuildContext context, WidgetRef ref) async {
@@ -162,6 +209,82 @@ class FolderPane extends ConsumerWidget {
   }
 }
 
+class _AccountActionsPanel extends StatefulWidget {
+  const _AccountActionsPanel({
+    required this.admin,
+    required this.onOpen,
+    required this.onSignOut,
+  });
+
+  final bool admin;
+  final void Function(Widget page) onOpen;
+  final VoidCallback onSignOut;
+
+  @override
+  State<_AccountActionsPanel> createState() => _AccountActionsPanelState();
+}
+
+class _AccountActionsPanelState extends State<_AccountActionsPanel> {
+  var _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return GlassPanel(
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.bottomCenter,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.tune),
+              title: const Text('Compte'),
+              trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+              onTap: () => setState(() => _expanded = !_expanded),
+            ),
+            if (_expanded) ...[
+              ListTile(
+                leading: const Icon(Icons.contacts_outlined),
+                title: const Text('Contacts'),
+                onTap: () => widget.onOpen(const ContactsScreen()),
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('Paramètres'),
+                onTap: () => widget.onOpen(const MailSettingsScreen()),
+              ),
+              if (widget.admin)
+                ListTile(
+                  leading: const Icon(Icons.admin_panel_settings_outlined),
+                  title: const Text('Mailbox admin'),
+                  onTap: () => widget.onOpen(const MailboxAdminScreen()),
+                ),
+              ListTile(
+                leading: const Icon(Icons.monitor_heart_outlined),
+                title: const Text('Diagnostics'),
+                onTap: () => widget.onOpen(const DiagnosticsScreen()),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_add_outlined),
+                title: const Text('Ajouter un compte'),
+                onTap: () => widget.onOpen(const LoginScreen()),
+              ),
+              ListTile(
+                leading: Icon(Icons.logout, color: scheme.error),
+                title: Text('Se déconnecter', style: TextStyle(color: scheme.error, fontWeight: FontWeight.w700)),
+                onTap: widget.onSignOut,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class MessageListPane extends ConsumerStatefulWidget {
   const MessageListPane({super.key, required this.onOpen});
 
@@ -173,12 +296,13 @@ class MessageListPane extends ConsumerStatefulWidget {
 
 class _MessageListPaneState extends ConsumerState<MessageListPane> {
   final _scroll = ScrollController();
-  final _search = TextEditingController();
+  late final TextEditingController _search;
   Timer? _searchTimer;
 
   @override
   void initState() {
     super.initState();
+    _search = TextEditingController(text: ref.read(mailControllerProvider).query);
     _scroll.addListener(() {
       if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 240) {
         ref.read(mailControllerProvider.notifier).loadMore();
@@ -210,11 +334,15 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
 
     ref.listen(mailControllerProvider, (previous, next) {
       if (previous != null && next.query != previous.query && next.query != _search.text) {
-        _search.text = next.query;
+        _search.value = TextEditingValue(
+          text: next.query,
+          selection: TextSelection.collapsed(offset: next.query.length),
+        );
       }
     });
 
-    final filtering = mail.query.isNotEmpty || mail.filter != 'all';
+    final filtering = mail.query.isNotEmpty || mail.filter != 'all' || mail.searchAll;
+    final displayed = _displayed(mail.messages, preferences.conversations);
     final body = mail.listLoading && mail.messages.isEmpty
         ? const Center(child: CircularProgressIndicator())
         : mail.messages.isEmpty
@@ -226,16 +354,19 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
       child: ListView.separated(
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: mail.messages.length + (mail.loadingMore ? 1 : 0),
+        itemCount: displayed.length + (mail.loadingMore ? 1 : 0),
         separatorBuilder: (_, _) => Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.5)),
         itemBuilder: (context, index) {
-          if (index >= mail.messages.length) {
+          if (index >= displayed.length) {
             return const Padding(
               padding: EdgeInsets.all(16),
               child: Center(child: CircularProgressIndicator()),
             );
           }
-          final message = mail.messages[index];
+          final message = displayed[index];
+          final threadCount = message.threadId.isEmpty
+              ? 1
+              : mail.messages.where((item) => item.threadId == message.threadId).length;
           final selected = message.uid == mail.selectedUid;
           final checked = mail.selectedUids.contains(message.uid);
           final row = ListTile(
@@ -289,6 +420,11 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
                       ),
                     if (message.hasAttachments) Icon(Icons.attachment, size: 16, color: scheme.onSurfaceVariant),
                     if (message.isFlagged) Icon(Icons.flag, size: 16, color: scheme.tertiary),
+                    if (threadCount > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Text('$threadCount', style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w800)),
+                      ),
                   ],
                 ),
               ],
@@ -319,11 +455,12 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
               child: Icon(Icons.delete_outline, color: scheme.onErrorContainer),
             ),
             confirmDismiss: (direction) async {
+              final notifier = ref.read(mailControllerProvider.notifier);
               if (direction == DismissDirection.startToEnd) {
-                await ref.read(mailControllerProvider.notifier).toggleFlag(message);
+                await notifier.queueFlag(message);
                 return false;
               }
-              await ref.read(mailControllerProvider.notifier).trash(message);
+              await notifier.queueTrash(message);
               return true;
             },
             child: row,
@@ -345,7 +482,7 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
                   decoration: InputDecoration(
                     hintText: 'Search sender, subject, text',
                     prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _search.text.isEmpty
+                    suffixIcon: _search.text.isEmpty && mail.query.isEmpty
                         ? null
                         : IconButton(
                             tooltip: 'Clear search',
@@ -391,14 +528,18 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
             ],
           ),
         ),
+        if (mail.offline)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text('Hors ligne — liste en cache', style: TextStyle(color: scheme.tertiary)),
+          ),
         const SizedBox(height: 8),
         if (mail.selecting)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(
+            child: GlassPanel(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
                   children: [
                     Text('${mail.selectedUids.length} selected', style: const TextStyle(fontWeight: FontWeight.w700)),
                     const Spacer(),
@@ -410,12 +551,12 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
                     IconButton(tooltip: 'Mark read', onPressed: () => ref.read(mailControllerProvider.notifier).batch('read'), icon: const Icon(Icons.mark_email_read_outlined)),
                     IconButton(tooltip: 'Mark unread', onPressed: () => ref.read(mailControllerProvider.notifier).batch('unread'), icon: const Icon(Icons.mark_email_unread_outlined)),
                     IconButton(tooltip: 'Flag', onPressed: () => ref.read(mailControllerProvider.notifier).batch('flag'), icon: const Icon(Icons.flag_outlined)),
+                    IconButton(tooltip: 'Junk', onPressed: () => ref.read(mailControllerProvider.notifier).batch('spam'), icon: const Icon(Icons.report_gmailerrorred_outlined)),
                     IconButton(tooltip: 'Move to', onPressed: () => _moveSelected(context), icon: const Icon(Icons.drive_file_move_outlined)),
                     IconButton(tooltip: 'Trash', onPressed: () => ref.read(mailControllerProvider.notifier).batch('trash'), icon: const Icon(Icons.delete_outline)),
                     IconButton(tooltip: 'Cancel', onPressed: () => ref.read(mailControllerProvider.notifier).clearSelection(), icon: const Icon(Icons.close)),
                   ],
                 ),
-              ),
             ),
           ),
         SizedBox(
@@ -424,6 +565,12 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             children: [
+              FilterChip(
+                label: const Text('All folders'),
+                selected: mail.searchAll,
+                onSelected: (value) => ref.read(mailControllerProvider.notifier).setView(searchAll: value),
+              ),
+              const SizedBox(width: 8),
               for (final item in const [
                 ('all', 'All'),
                 ('unread', 'Unread'),
@@ -478,6 +625,17 @@ class _MessageListPaneState extends ConsumerState<MessageListPane> {
         Expanded(child: body),
       ],
     );
+  }
+
+  List<MailSummary> _displayed(List<MailSummary> messages, bool conversations) {
+    if (!conversations) return messages;
+    final seen = <String>{};
+    final rows = <MailSummary>[];
+    for (final message in messages) {
+      final key = message.threadId.isEmpty ? 'uid:${message.uid}' : message.threadId;
+      if (seen.add(key)) rows.add(message);
+    }
+    return rows;
   }
 
   String _sortLabel(String sort) {

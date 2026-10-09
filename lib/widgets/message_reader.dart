@@ -2,7 +2,6 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../core/download.dart';
@@ -10,6 +9,7 @@ import '../models/mail_models.dart';
 import '../providers/auth_controller.dart';
 import '../providers/mail_controller.dart';
 import '../screens/compose_screen.dart';
+import '../widgets/mail_html_view.dart';
 import '../widgets/mail_panes.dart';
 
 class MessageReader extends ConsumerWidget {
@@ -87,6 +87,11 @@ class MessageReader extends ConsumerWidget {
                 icon: Icon(message.isFlagged ? Icons.flag : Icons.flag_outlined),
               ),
               IconButton(
+                tooltip: 'Junk',
+                onPressed: () => ref.read(mailControllerProvider.notifier).markSpam(summary),
+                icon: const Icon(Icons.report_gmailerrorred_outlined),
+              ),
+              IconButton(
                 tooltip: 'Move to trash',
                 onPressed: () => ref.read(mailControllerProvider.notifier).trash(summary),
                 icon: const Icon(Icons.delete_outline),
@@ -132,7 +137,7 @@ class MessageReader extends ConsumerWidget {
                 _addressLine(context, 'Date', formatMailDate(message.date)),
                 const SizedBox(height: 20),
                 if (message.html.trim().isNotEmpty)
-                  HtmlWidget(
+                  MailHtmlView(
                     message.html,
                     textStyle: Theme.of(context).textTheme.bodyLarge,
                   )
@@ -155,16 +160,20 @@ class MessageReader extends ConsumerWidget {
                   for (final attachment in message.attachments)
                     _AttachmentCard(message: message, attachment: attachment),
                 ],
-                if (message.subject.trim().isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.forum_outlined),
-                      title: const Text('Conversation'),
-                      subtitle: const Text('Show messages with this subject'),
-                      onTap: () => ref.read(mailControllerProvider.notifier).setView(query: _threadSubject(message.subject)),
+                if (mail.thread.length > 1) ...[
+                  const SizedBox(height: 28),
+                  Text('Conversation (${mail.thread.length})', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  for (final item in mail.thread)
+                    ListTile(
+                      dense: true,
+                      selected: item.uid == message.uid,
+                      leading: const Icon(Icons.forum_outlined, size: 18),
+                      title: Text(item.from?.label.isNotEmpty == true ? item.from!.label : 'Unknown', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(item.subject.isEmpty ? formatMailDate(item.date) : item.subject, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: Text(formatMailDate(item.date), style: Theme.of(context).textTheme.labelSmall),
+                      onTap: item.uid == message.uid ? null : () => ref.read(mailControllerProvider.notifier).openMessage(item),
                     ),
-                  ),
                 ],
               ],
             ),

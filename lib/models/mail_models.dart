@@ -76,6 +76,8 @@ class MailSummary {
     required this.hasAttachments,
     required this.size,
     this.from,
+    this.threadId = '',
+    this.category = 'people',
   });
 
   final int uid;
@@ -88,6 +90,8 @@ class MailSummary {
   final bool isFlagged;
   final bool hasAttachments;
   final int size;
+  final String threadId;
+  final String category;
 
   factory MailSummary.fromJson(Map<String, dynamic> json) {
     return MailSummary(
@@ -101,6 +105,8 @@ class MailSummary {
       isFlagged: json['isFlagged'] == true,
       hasAttachments: json['hasAttachments'] == true,
       size: json['size'] is num ? (json['size'] as num).toInt() : 0,
+      threadId: json['threadId']?.toString() ?? '',
+      category: json['category']?.toString() ?? 'people',
     );
   }
 
@@ -116,6 +122,8 @@ class MailSummary {
       hasAttachments: hasAttachments,
       size: size,
       from: from,
+      threadId: threadId,
+      category: category,
     );
   }
 }

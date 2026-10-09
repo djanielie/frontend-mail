@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
-
 import '../core/api_client.dart';
 import '../core/api_exception.dart';
 import '../mail_html.dart';
@@ -12,6 +10,7 @@ import '../models/mail_models.dart';
 import '../providers/auth_controller.dart';
 import '../providers/mail_controller.dart';
 import '../providers/mail_preferences.dart';
+import '../widgets/mail_html_view.dart';
 
 class ComposeArgs {
   const ComposeArgs({
@@ -105,6 +104,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   late final TextEditingController _bcc;
   late final TextEditingController _subject;
   late final TextEditingController _body;
+  late final FocusNode _toFocus;
+  late final FocusNode _ccFocus;
+  late final FocusNode _bccFocus;
   final List<OutgoingFile> _files = [];
   Timer? _autosaveTimer;
   int? _draftUid;
@@ -125,8 +127,14 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     _bcc = TextEditingController(text: args.bcc);
     _subject = TextEditingController(text: args.subject);
     _body = TextEditingController(text: _withSignature(args.body, signature));
+    _toFocus = FocusNode();
+    _ccFocus = FocusNode();
+    _bccFocus = FocusNode();
     _showBcc = args.bcc.isNotEmpty;
-    for (final controller in [_to, _cc, _bcc, _subject, _body]) {
+    for (final controller in [_to, _cc, _bcc]) {
+      controller.addListener(_onAddressChanged);
+    }
+    for (final controller in [_subject, _body]) {
       controller.addListener(_scheduleAutosave);
     }
   }
@@ -139,6 +147,9 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     _bcc.dispose();
     _subject.dispose();
     _body.dispose();
+    _toFocus.dispose();
+    _ccFocus.dispose();
+    _bccFocus.dispose();
     super.dispose();
   }
 
@@ -203,7 +214,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
       } else if (draft) {
         result = await api.sendForm('/api/mail/draft', fields: _fields, files: _files, onProgress: _onProgress);
       } else {
-        result = await api.sendForm('/api/mail/send', fields: _fields, files: _files, onProgress: _onProgress);
+        await _recordRecipients();
+        if (!mounted) return;
+        await ref.read(mailControllerProvider.notifier).queueSend(_fields, List.of(_files));
+        if (close && mounted) Navigator.of(context).pop();
+        return;
       }
       if (draft && result['uid'] is num) _draftUid = (result['uid'] as num).toInt();
       if (!mounted) return;
@@ -217,6 +232,11 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _onAddressChanged() {
+    _scheduleAutosave();
+    setState(() {});
   }
 
   void _scheduleAutosave() {
@@ -237,6 +257,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final preferences = ref.watch(mailPreferencesProvider);
+    final frequent = _frequentContacts(preferences.contacts);
     return Scaffold(
       appBar: AppBar(
         title: Text(_draftUid == null ? 'New message' : 'Edit draft'),
@@ -263,24 +284,34 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
                   children: [
-                    TextField(controller: _to, decoration: const InputDecoration(labelText: 'To'), keyboardType: TextInputType.emailAddress),
-                    if (preferences.contacts.isNotEmpty) ...[
+                    _addressField(
+                      controller: _to,
+                      focusNode: _toFocus,
+                      label: 'To',
+                      contacts: preferences.contacts,
+                    ),
+                    if (frequent.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
                         children: [
-                          for (final contact in preferences.contacts.take(8))
+                          for (final contact in frequent)
                             ActionChip(
                               avatar: const Icon(Icons.person_add_alt_1, size: 16),
                               label: Text(contact.label, overflow: TextOverflow.ellipsis),
-                              onPressed: () => _appendAddress(_to, contact.address),
+                              onPressed: () => _appendAddress(_to, contact),
                             ),
                         ],
                       ),
                     ],
                     const SizedBox(height: 10),
-                    TextField(controller: _cc, decoration: const InputDecoration(labelText: 'Cc'), keyboardType: TextInputType.emailAddress),
+                    _addressField(
+                      controller: _cc,
+                      focusNode: _ccFocus,
+                      label: 'Cc',
+                      contacts: preferences.contacts,
+                    ),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: TextButton(
@@ -289,7 +320,12 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                       ),
                     ),
                     if (_showBcc)
-                      TextField(controller: _bcc, decoration: const InputDecoration(labelText: 'Bcc'), keyboardType: TextInputType.emailAddress),
+                      _addressField(
+                        controller: _bcc,
+                        focusNode: _bccFocus,
+                        label: 'Bcc',
+                        contacts: preferences.contacts,
+                      ),
                     const SizedBox(height: 10),
                     TextField(controller: _subject, decoration: const InputDecoration(labelText: 'Subject')),
                     const SizedBox(height: 12),
@@ -315,7 +351,7 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: SelectionArea(
-                            child: HtmlWidget(
+                            child: MailHtmlView(
                               documentWithSignature(_body.text, ref.read(mailPreferencesProvider).signature),
                               textStyle: Theme.of(context).textTheme.bodyLarge,
                             ),
@@ -362,9 +398,120 @@ class _ComposeScreenState extends ConsumerState<ComposeScreen> {
     );
   }
 
-  void _appendAddress(TextEditingController controller, String address) {
+  Widget _addressField({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String label,
+    required List<MailContact> contacts,
+  }) {
+    return RawAutocomplete<MailContact>(
+      textEditingController: controller,
+      focusNode: focusNode,
+      displayStringForOption: (contact) => _completedValue(controller.text, contact.address),
+      optionsBuilder: (value) {
+        final token = _currentToken(value.text);
+        if (token.isEmpty) return const Iterable<MailContact>.empty();
+        final used = _usedAddresses();
+        final query = token.toLowerCase();
+        return contacts.where((contact) {
+          if (used.contains(contact.address.toLowerCase())) return false;
+          return contact.address.toLowerCase().contains(query) ||
+              contact.name.toLowerCase().contains(query);
+        }).take(8);
+      },
+      onSelected: (contact) {
+        _bumpContact(contact);
+        setState(() {});
+      },
+      fieldViewBuilder: (context, textController, fieldFocus, onFieldSubmitted) {
+        return TextField(
+          controller: textController,
+          focusNode: fieldFocus,
+          decoration: InputDecoration(labelText: label),
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.next,
+          onSubmitted: (_) => onFieldSubmitted(),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240, maxWidth: 420),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final contact = options.elementAt(index);
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.person_outline, size: 20),
+                    title: Text(contact.name.isEmpty ? contact.address : contact.name),
+                    subtitle: contact.name.isEmpty ? null : Text(contact.address),
+                    onTap: () => onSelected(contact),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<MailContact> _frequentContacts(List<MailContact> contacts) {
+    final used = _usedAddresses();
+    return contacts.where((contact) => !used.contains(contact.address.toLowerCase())).take(3).toList();
+  }
+
+  Set<String> _usedAddresses() {
+    final used = <String>{};
+    for (final controller in [_to, _cc, _bcc]) {
+      for (final part in controller.text.split(RegExp(r'[,;]'))) {
+        final token = part.trim();
+        if (token.isEmpty) continue;
+        final match = RegExp(r'<([^>]+)>').firstMatch(token);
+        used.add((match?.group(1) ?? token).trim().toLowerCase());
+      }
+    }
+    return used;
+  }
+
+  String _currentToken(String text) {
+    final parts = text.split(RegExp(r'[,;]'));
+    return parts.isEmpty ? '' : parts.last.trim();
+  }
+
+  String _completedValue(String text, String address) {
+    final matches = RegExp(r'[,;]').allMatches(text);
+    if (matches.isEmpty) return address;
+    final prefix = text.substring(0, matches.last.end).trimRight();
+    return '$prefix $address';
+  }
+
+  void _appendAddress(TextEditingController controller, MailContact contact) {
     final current = controller.text.trim();
-    controller.text = current.isEmpty ? address : '$current, $address';
+    final next = current.isEmpty ? contact.address : '$current, ${contact.address}';
+    controller.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    _bumpContact(contact);
+  }
+
+  Future<void> _bumpContact(MailContact contact) {
+    return ref.read(mailPreferencesProvider.notifier).addContacts([contact], bumpUses: true);
+  }
+
+  Future<void> _recordRecipients() {
+    return ref.read(mailPreferencesProvider.notifier).addContacts(
+      _usedAddresses().map((address) => MailContact(name: '', address: address)),
+      bumpUses: true,
+    );
   }
 
   String _size(int bytes) {
