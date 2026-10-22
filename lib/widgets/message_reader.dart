@@ -5,18 +5,38 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../core/download.dart';
+import '../core/email_screenshot.dart';
 import '../models/mail_models.dart';
 import '../providers/auth_controller.dart';
 import '../providers/mail_controller.dart';
+import '../mail_html.dart';
 import '../screens/compose_screen.dart';
-import '../widgets/mail_html_view.dart';
+import '../widgets/mail_html_controller.dart';
+import '../widgets/mail_html_document.dart';
 import '../widgets/mail_panes.dart';
 
-class MessageReader extends ConsumerWidget {
+class MessageReader extends ConsumerStatefulWidget {
   const MessageReader({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MessageReader> createState() => _MessageReaderState();
+}
+
+class _MessageReaderState extends ConsumerState<MessageReader> {
+  final _scroll = ScrollController();
+  final _html = MailHtmlController();
+  final _headerKey = GlobalKey();
+  final _plainKey = GlobalKey();
+  var _exporting = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final mail = ref.watch(mailControllerProvider);
     final scheme = Theme.of(context).colorScheme;
 
@@ -68,20 +88,6 @@ class MessageReader extends ConsumerWidget {
                 icon: const Icon(Icons.forward_outlined),
               ),
               IconButton(
-                tooltip: 'Copy text',
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: message.text));
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Message text copied')));
-                },
-                icon: const Icon(Icons.copy_outlined),
-              ),
-              IconButton(
-                tooltip: 'Details / source',
-                onPressed: () => _showDetails(context, ref, message),
-                icon: const Icon(Icons.article_outlined),
-              ),
-              IconButton(
                 tooltip: message.isFlagged ? 'Remove flag' : 'Flag',
                 onPressed: () => ref.read(mailControllerProvider.notifier).toggleFlag(summary),
                 icon: Icon(message.isFlagged ? Icons.flag : Icons.flag_outlined),
@@ -117,34 +123,88 @@ class MessageReader extends ConsumerWidget {
                     : null,
                 icon: const Icon(Icons.keyboard_arrow_down),
               ),
+              PopupMenuButton<String>(
+                tooltip: 'More',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'screenshot':
+                      _exportScreenshot(message);
+                    case 'copy':
+                      _copyText(message);
+                    case 'details':
+                      _showDetails(context, ref, message);
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'screenshot',
+                    enabled: !_exporting,
+                    child: const ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.photo_outlined),
+                      title: Text('Export screenshot'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'copy',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.copy_outlined),
+                      title: Text('Copy text'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'details',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.article_outlined),
+                      title: Text('Details / source'),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
         Expanded(
-          child: SelectionArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+              controller: _scroll,
               children: [
-                Text(
-                  message.subject.isEmpty ? '(No subject)' : message.subject,
-                  style: Theme.of(context).textTheme.headlineMedium,
+                RepaintBoundary(
+                  key: _headerKey,
+                  child: SelectionArea(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          message.subject.isEmpty ? '(No subject)' : message.subject,
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 16),
+                        _addressLine(context, 'From', message.from == null ? '' : message.from!.label),
+                        _addressLine(context, 'To', message.to.map((item) => item.label).join(', ')),
+                        if (message.cc.isNotEmpty)
+                          _addressLine(context, 'Cc', message.cc.map((item) => item.label).join(', ')),
+                        _addressLine(context, 'Date', formatMailDate(message.date)),
+                      ],
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
-                _addressLine(context, 'From', message.from == null ? '' : message.from!.label),
-                _addressLine(context, 'To', message.to.map((item) => item.label).join(', ')),
-                if (message.cc.isNotEmpty)
-                  _addressLine(context, 'Cc', message.cc.map((item) => item.label).join(', ')),
-                _addressLine(context, 'Date', formatMailDate(message.date)),
-                const SizedBox(height: 20),
-                if (message.html.trim().isNotEmpty)
-                  MailHtmlView(
-                    message.html,
-                    textStyle: Theme.of(context).textTheme.bodyLarge,
-                  )
-                else
-                  SelectableText(message.text, style: Theme.of(context).textTheme.bodyLarge),
+                _MessageBody(
+                  message: message,
+                  controller: _html,
+                  captureKey: _plainKey,
+                  onScrollDelta: _onHtmlScroll,
+                ),
                 if (message.attachments.isNotEmpty) ...[
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 16),
                   Row(
                     children: [
                       Expanded(child: Text('Attachments', style: Theme.of(context).textTheme.titleMedium)),
@@ -156,17 +216,17 @@ class MessageReader extends ConsumerWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   for (final attachment in message.attachments)
                     _AttachmentCard(message: message, attachment: attachment),
                 ],
                 if (mail.thread.length > 1) ...[
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 12),
                   Text('Conversation (${mail.thread.length})', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
                   for (final item in mail.thread)
                     ListTile(
                       dense: true,
+                      contentPadding: EdgeInsets.zero,
                       selected: item.uid == message.uid,
                       leading: const Icon(Icons.forum_outlined, size: 18),
                       title: Text(item.from?.label.isNotEmpty == true ? item.from!.label : 'Unknown', maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -181,6 +241,54 @@ class MessageReader extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  void _onHtmlScroll(Offset delta) {
+    if (!_scroll.hasClients) return;
+    final next = (_scroll.offset + delta.dy).clamp(
+      _scroll.position.minScrollExtent,
+      _scroll.position.maxScrollExtent,
+    );
+    _scroll.jumpTo(next);
+  }
+
+  Future<void> _copyText(MailMessage message) async {
+    await Clipboard.setData(ClipboardData(text: message.text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Message text copied')));
+  }
+
+  Future<void> _exportScreenshot(MailMessage message) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('Preparing screenshot…')));
+    try {
+      final header = await captureRepaintBoundary(_headerKey);
+      var body = await _html.capturePng();
+      body ??= await captureRepaintBoundary(_plainKey);
+      if (body == null && message.text.trim().isNotEmpty) {
+        body = await renderTextPng(message.text);
+      }
+      final parts = [?header, ?body];
+      if (parts.isEmpty) {
+        throw StateError('Could not capture this message');
+      }
+      final bytes = await stitchPngs(parts);
+      if (!mounted) return;
+      final path = await saveBytes(
+        filename: emailScreenshotFilename(message.subject),
+        bytes: bytes,
+        mime: 'image/png',
+      );
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text(path == null ? 'Save started' : 'Saved to $path')));
+    } catch (err) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text(err.toString())));
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Widget _addressLine(BuildContext context, String label, String value) {
@@ -403,6 +511,40 @@ class _AttachmentCard extends ConsumerWidget {
     } catch (err) {
       messenger.showSnackBar(SnackBar(content: Text(err.toString())));
     }
+  }
+}
+
+class _MessageBody extends StatelessWidget {
+  const _MessageBody({
+    required this.message,
+    required this.controller,
+    required this.captureKey,
+    required this.onScrollDelta,
+  });
+
+  final MailMessage message;
+  final MailHtmlController controller;
+  final GlobalKey captureKey;
+  final ValueChanged<Offset> onScrollDelta;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodyLarge;
+    final html = message.html.trim();
+    final text = message.text.trim();
+    if (htmlHasVisibleContent(html)) {
+      return MailHtmlDocument(html, controller: controller, onScrollDelta: onScrollDelta);
+    }
+    if (text.isNotEmpty) {
+      return RepaintBoundary(
+        key: captureKey,
+        child: SelectableText(text, style: style),
+      );
+    }
+    return Text(
+      'Ce message n’a pas de contenu affichable.',
+      style: style?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+    );
   }
 }
 

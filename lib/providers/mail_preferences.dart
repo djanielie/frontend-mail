@@ -92,9 +92,40 @@ class MailRule {
   }
 }
 
+class MailSignature {
+  const MailSignature({required this.id, this.name = '', this.html = ''});
+
+  final String id;
+  final String name;
+  final String html;
+
+  String get label {
+    final trimmed = name.trim();
+    return trimmed.isEmpty ? 'Sans nom' : trimmed;
+  }
+
+  MailSignature copyWith({String? name, String? html}) {
+    return MailSignature(id: id, name: name ?? this.name, html: html ?? this.html);
+  }
+
+  Map<String, String> toJson() => {'id': id, 'name': name, 'html': html};
+
+  static MailSignature? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final id = json['id']?.toString() ?? '';
+    if (id.isEmpty) return null;
+    return MailSignature(
+      id: id,
+      name: json['name']?.toString() ?? '',
+      html: json['html']?.toString() ?? '',
+    );
+  }
+}
+
 class MailPreferences {
   const MailPreferences({
-    this.signature = '',
+    this.signatures = const [],
+    this.activeSignatureId = '',
     this.displayName = '',
     this.color = 0xFF7B93FF,
     this.density = 'comfortable',
@@ -110,7 +141,8 @@ class MailPreferences {
     this.rules = const [],
   });
 
-  final String signature;
+  final List<MailSignature> signatures;
+  final String activeSignatureId;
   final String displayName;
   final int color;
   final String density;
@@ -128,6 +160,15 @@ class MailPreferences {
   bool get compact => density == 'compact';
   Color get accountColor => Color(color);
 
+  MailSignature? get activeSignature {
+    for (final item in signatures) {
+      if (item.id == activeSignatureId) return item;
+    }
+    return signatures.isEmpty ? null : signatures.first;
+  }
+
+  String get signature => activeSignature?.html ?? '';
+
   bool notifiesCategory(String category) {
     if (!notificationsEnabled) return false;
     if (category == 'newsletter') return notifyNewsletters;
@@ -136,7 +177,8 @@ class MailPreferences {
   }
 
   MailPreferences copyWith({
-    String? signature,
+    List<MailSignature>? signatures,
+    String? activeSignatureId,
     String? displayName,
     int? color,
     String? density,
@@ -152,7 +194,8 @@ class MailPreferences {
     List<MailRule>? rules,
   }) {
     return MailPreferences(
-      signature: signature ?? this.signature,
+      signatures: signatures ?? this.signatures,
+      activeSignatureId: activeSignatureId ?? this.activeSignatureId,
       displayName: displayName ?? this.displayName,
       color: color ?? this.color,
       density: density ?? this.density,
@@ -171,6 +214,8 @@ class MailPreferences {
 
   Map<String, Object> toJson() => {
         'signature': signature,
+        'signatures': signatures.map((item) => item.toJson()).toList(),
+        'activeSignatureId': activeSignatureId,
         'displayName': displayName,
         'color': color,
         'density': density,
@@ -190,8 +235,17 @@ class MailPreferences {
     if (json is! Map) return const MailPreferences();
     final contacts = json['contacts'] is List ? json['contacts'] as List : const [];
     final rules = json['rules'] is List ? json['rules'] as List : const [];
+    var signatures = (json['signatures'] is List ? json['signatures'] as List : const [])
+        .map(MailSignature.fromJson)
+        .whereType<MailSignature>()
+        .toList();
+    final legacy = json['signature']?.toString() ?? '';
+    if (signatures.isEmpty && legacy.trim().isNotEmpty) {
+      signatures = [MailSignature(id: 'default', name: 'Principale', html: legacy)];
+    }
     return MailPreferences(
-      signature: json['signature']?.toString() ?? '',
+      signatures: signatures,
+      activeSignatureId: json['activeSignatureId']?.toString() ?? '',
       displayName: json['displayName']?.toString() ?? '',
       color: json['color'] is num ? (json['color'] as num).toInt() : 0xFF7B93FF,
       density: json['density'] == 'compact' ? 'compact' : 'comfortable',
@@ -220,18 +274,35 @@ class MailPreferencesController extends StateNotifier<MailPreferences> {
   static MailPreferences _read(SharedPreferences prefs, String email) {
     if (email.isEmpty) return const MailPreferences();
     final raw = prefs.getString(_key(email));
-    if (raw == null || raw.isEmpty) return MailPreferences(signature: _defaultSignature(email));
+    if (raw == null || raw.isEmpty) return _withSignatures(const MailPreferences(), email, legacyHtml: _defaultSignature(email));
     try {
-      final parsed = MailPreferences.fromJson(jsonDecode(raw));
-      if (parsed.signature.trim().isEmpty) {
-        return parsed.copyWith(signature: _defaultSignature(email));
-      }
-      final signature = _withCurrentLogo(parsed.signature);
-      if (signature != parsed.signature) return parsed.copyWith(signature: signature);
-      return parsed;
+      return _withSignatures(MailPreferences.fromJson(jsonDecode(raw)), email);
     } catch (_) {
-      return MailPreferences(signature: _defaultSignature(email));
+      return _withSignatures(const MailPreferences(), email, legacyHtml: _defaultSignature(email));
     }
+  }
+
+  static MailPreferences _withSignatures(MailPreferences parsed, String email, {String? legacyHtml}) {
+    var signatures = [
+      for (final item in parsed.signatures) item.copyWith(html: _withCurrentLogo(item.html)),
+    ];
+    final inherited = (legacyHtml ?? parsed.signature).trim();
+    if (signatures.isEmpty && inherited.isNotEmpty) {
+      signatures = [
+        MailSignature(id: 'default', name: 'Principale', html: _withCurrentLogo(inherited)),
+      ];
+    }
+    if (signatures.isEmpty) {
+      final fallback = _defaultSignature(email);
+      if (fallback.trim().isNotEmpty) {
+        signatures = [MailSignature(id: 'default', name: 'Principale', html: fallback)];
+      }
+    }
+    var activeId = parsed.activeSignatureId;
+    if (activeId.isEmpty || !signatures.any((item) => item.id == activeId)) {
+      activeId = signatures.isEmpty ? '' : signatures.first.id;
+    }
+    return parsed.copyWith(signatures: signatures, activeSignatureId: activeId);
   }
 
   Future<void> _write(MailPreferences next) async {
@@ -291,6 +362,34 @@ class MailPreferencesController extends StateNotifier<MailPreferences> {
         return a.label.toLowerCase().compareTo(b.label.toLowerCase());
       });
     await _write(state.copyWith(contacts: next.take(250).toList()));
+  }
+
+  Future<void> upsertSignature(MailSignature signature, {bool activate = false}) async {
+    final next = [...state.signatures];
+    final index = next.indexWhere((item) => item.id == signature.id);
+    if (index >= 0) {
+      next[index] = signature;
+    } else {
+      next.add(signature);
+    }
+    await _write(state.copyWith(
+      signatures: next,
+      activeSignatureId: activate || state.activeSignatureId.isEmpty ? signature.id : state.activeSignatureId,
+    ));
+  }
+
+  Future<void> removeSignature(String id) async {
+    final next = state.signatures.where((item) => item.id != id).toList();
+    var activeId = state.activeSignatureId;
+    if (activeId == id) {
+      activeId = next.isEmpty ? '' : next.first.id;
+    }
+    await _write(state.copyWith(signatures: next, activeSignatureId: activeId));
+  }
+
+  Future<void> setActiveSignature(String id) async {
+    if (!state.signatures.any((item) => item.id == id)) return;
+    await _write(state.copyWith(activeSignatureId: id));
   }
 
   Future<void> removeContact(String address) async {

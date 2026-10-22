@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 
+import '../mail_html.dart';
 import 'ibelucky_logo_bytes.dart';
 import 'ibelucky_mark.dart';
+import 'mail_link_sheet.dart';
 
 final ibeLuckyLogoBytes = Uint8List.fromList(base64Decode(ibeLuckyLogoBase64));
 final ibeLuckyLogoImage = MemoryImage(ibeLuckyLogoBytes);
@@ -20,6 +23,34 @@ bool isIbeLuckyLogoUrl(String url) {
 }
 
 class MailHtmlFactory extends WidgetFactory {
+  MailHtmlFactory({required this.onOpenLink});
+
+  final void Function(String url) onOpenLink;
+
+  @override
+  Future<bool> onTapUrl(String url) async {
+    onOpenLink(url);
+    return true;
+  }
+
+  @override
+  Widget? buildGestureDetector(BuildTree tree, Widget child, GestureRecognizer recognizer) {
+    if (recognizer is! TapGestureRecognizer) {
+      return super.buildGestureDetector(tree, child, recognizer);
+    }
+    final href = tree.element.attributes['href'];
+    final url = href == null ? null : (urlFull(href) ?? href);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: recognizer.onTap,
+        onLongPress: url == null ? null : () => onOpenLink(url),
+        onSecondaryTap: url == null ? null : () => onOpenLink(url),
+        child: child,
+      ),
+    );
+  }
+
   @override
   ImageProvider? imageProviderFromNetwork(String url) {
     if (isIbeLuckyLogoUrl(url)) {
@@ -46,10 +77,13 @@ class MailHtmlView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fragment = htmlBodyFragment(html);
     return HtmlWidget(
-      html,
+      fragment.isEmpty ? html : fragment,
       textStyle: textStyle,
-      factoryBuilder: MailHtmlFactory.new,
+      factoryBuilder: () => MailHtmlFactory(
+        onOpenLink: (url) => handleMailLink(context, url),
+      ),
       onErrorBuilder: (context, element, error) {
         final src = element.attributes['src'] ?? '';
         if (isIbeLuckyLogoUrl(src)) {

@@ -6,7 +6,9 @@ import '../providers/auth_controller.dart';
 import '../providers/mail_controller.dart';
 import '../providers/mail_preferences.dart';
 import '../providers/theme_controller.dart';
+import '../widgets/mail_html_view.dart';
 import 'rules_screen.dart';
+import 'signatures_screen.dart';
 
 class MailSettingsScreen extends ConsumerStatefulWidget {
   const MailSettingsScreen({super.key});
@@ -17,7 +19,6 @@ class MailSettingsScreen extends ConsumerStatefulWidget {
 
 class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
   late final TextEditingController _displayName;
-  late final TextEditingController _signature;
   late int _color;
   late String _density;
   late String _sentFolder;
@@ -29,7 +30,6 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
     super.initState();
     final prefs = ref.read(mailPreferencesProvider);
     _displayName = TextEditingController(text: prefs.displayName);
-    _signature = TextEditingController(text: prefs.signature);
     _color = prefs.color;
     _density = prefs.density;
     _sentFolder = prefs.sentFolder;
@@ -40,7 +40,6 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
   @override
   void dispose() {
     _displayName.dispose();
-    _signature.dispose();
     super.dispose();
   }
 
@@ -62,17 +61,9 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
             padding: const EdgeInsets.all(24),
             children: [
               TextField(controller: _displayName, decoration: const InputDecoration(labelText: 'Display name')),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _signature,
-                minLines: 6,
-                maxLines: null,
-                decoration: const InputDecoration(
-                  labelText: 'Signature',
-                  helperText: 'HTML is supported for rich signatures, images and columns.',
-                ),
-              ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 28),
+              _SignaturesSettings(),
+              const SizedBox(height: 28),
               Text('Appearance', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 10),
               SegmentedButton<ThemeMode>(
@@ -206,7 +197,6 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
     final current = ref.read(mailPreferencesProvider);
     await ref.read(mailPreferencesProvider.notifier).update(current.copyWith(
           displayName: _displayName.text.trim(),
-          signature: _signature.text.trim(),
           color: _color,
           density: _density,
           sentFolder: _sentFolder,
@@ -283,5 +273,100 @@ class _MailSettingsScreenState extends ConsumerState<MailSettingsScreen> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Le mot de passe n’a pas pu être changé.')));
     }
+  }
+}
+
+class _SignaturesSettings extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final prefs = ref.watch(mailPreferencesProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final active = prefs.activeSignature;
+    final wide = MediaQuery.sizeOf(context).width >= 720;
+    final list = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final item in prefs.signatures)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Material(
+              color: item.id == prefs.activeSignatureId
+                  ? scheme.primaryContainer.withValues(alpha: 0.55)
+                  : scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => ref.read(mailPreferencesProvider.notifier).setActiveSignature(item.id),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Text(item.label, style: text.titleSmall),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+    final preview = DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.55)),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 140, maxHeight: 220),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: active == null || active.html.trim().isEmpty
+              ? Text('Aucun aperçu', style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant))
+              : MailHtmlView(active.html),
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Signatures', style: text.titleMedium)),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SignaturesScreen())),
+              child: const Text('Gérer'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'La signature active est jointe à l’envoi. Le HTML s’ouvre seulement pour l’édition.',
+          style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 14),
+        if (prefs.signatures.isEmpty)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.draw_outlined),
+            title: const Text('Aucune signature'),
+            subtitle: const Text('Ajouter une signature'),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SignaturesScreen())),
+          )
+        else ...[
+          if (wide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: 220, child: list),
+                const SizedBox(width: 16),
+                Expanded(child: preview),
+              ],
+            )
+          else ...[
+            list,
+            const SizedBox(height: 12),
+            preview,
+          ],
+        ],
+      ],
+    );
   }
 }

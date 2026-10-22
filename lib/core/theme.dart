@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 const ibeLuckyBlue = Color(0xFF4B66D8);
 const ibeLuckyBlueBright = Color(0xFF7B93FF);
@@ -20,15 +19,15 @@ ThemeData buildMailTheme(Brightness brightness) {
     colorScheme: scheme,
     brightness: brightness,
     visualDensity: VisualDensity.standard,
+    fontFamily: 'Segoe UI',
+    fontFamilyFallback: const ['system-ui', 'Arial'],
   );
-  final text = GoogleFonts.figtreeTextTheme(base.textTheme).copyWith(
-    headlineMedium: GoogleFonts.sora(
-      textStyle: base.textTheme.headlineMedium,
+  final text = base.textTheme.copyWith(
+    headlineMedium: base.textTheme.headlineMedium?.copyWith(
       fontWeight: FontWeight.w600,
       color: dark ? ibeLuckyInk : scheme.onSurface,
     ),
-    titleLarge: GoogleFonts.sora(
-      textStyle: base.textTheme.titleLarge,
+    titleLarge: base.textTheme.titleLarge?.copyWith(
       fontWeight: FontWeight.w600,
       color: dark ? ibeLuckyInk : scheme.onSurface,
     ),

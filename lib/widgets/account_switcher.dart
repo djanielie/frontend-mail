@@ -1,9 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/account_unread.dart';
 import '../providers/auth_controller.dart';
 import '../providers/mail_preferences.dart';
 import 'glass.dart';
+
+class AccountUnreadBadge extends StatelessWidget {
+  const AccountUnreadBadge({super.key, required this.count, required this.child});
+
+  final int count;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Badge(
+      isLabelVisible: count > 0,
+      label: Text(count > 99 ? '99+' : '$count'),
+      child: child,
+    );
+  }
+}
 
 String emailInitials(String email) {
   final local = email.split('@').first.trim();
@@ -27,19 +44,23 @@ class _AccountSwitcherState extends ConsumerState<AccountSwitcher> {
   var _drag = 0.0;
 
   void _toggle({bool? open}) {
+    final next = open ?? !_open;
     setState(() {
-      _open = open ?? !_open;
+      _open = next;
       _drag = 0;
     });
+    if (next) ref.read(accountUnreadProvider.notifier).refresh();
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
     final prefs = ref.watch(mailPreferencesProvider);
+    final unread = ref.watch(accountUnreadProvider);
     final scheme = Theme.of(context).colorScheme;
     final email = auth.email ?? '';
     final name = prefs.displayName.trim().isEmpty ? email.split('@').first : prefs.displayName.trim();
+    int countFor(String value) => unread[value.toLowerCase()] ?? 0;
 
     return GestureDetector(
       onVerticalDragUpdate: (details) {
@@ -62,13 +83,16 @@ class _AccountSwitcherState extends ConsumerState<AccountSwitcher> {
               borderRadius: BorderRadius.circular(16),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 26,
-                    backgroundColor: prefs.accountColor.withValues(alpha: 0.28),
-                    foregroundColor: scheme.primary,
-                    child: Text(
-                      emailInitials(email),
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  AccountUnreadBadge(
+                    count: countFor(email),
+                    child: CircleAvatar(
+                      radius: 26,
+                      backgroundColor: prefs.accountColor.withValues(alpha: 0.28),
+                      foregroundColor: scheme.primary,
+                      child: Text(
+                        emailInitials(email),
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -114,16 +138,25 @@ class _AccountSwitcherState extends ConsumerState<AccountSwitcher> {
                         ListTile(
                           dense: true,
                           contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            radius: 16,
-                            backgroundColor: scheme.primaryContainer.withValues(alpha: 0.7),
-                            foregroundColor: scheme.primary,
-                            child: Text(
-                              emailInitials(account.email),
-                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+                          leading: AccountUnreadBadge(
+                            count: countFor(account.email),
+                            child: CircleAvatar(
+                              radius: 16,
+                              backgroundColor: scheme.primaryContainer.withValues(alpha: 0.7),
+                              foregroundColor: scheme.primary,
+                              child: Text(
+                                emailInitials(account.email),
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+                              ),
                             ),
                           ),
                           title: Text(account.email, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          trailing: countFor(account.email) > 0
+                              ? Text(
+                                  '${countFor(account.email)}',
+                                  style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w800),
+                                )
+                              : null,
                           onTap: () {
                             ref.read(authControllerProvider.notifier).switchAccount(account.email);
                             _toggle(open: false);
